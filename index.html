@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Advanced Hand Tracking AR</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg-color: #050510;
+            --text-color: #ffffff;
+            --glass-bg: rgba(20, 25, 40, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --glass-blur: blur(16px);
+            --accent: #00ffcc;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            position: fixed;
+        }
+
+        .video-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+
+        .input_video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 0;
+            filter: brightness(0.7) contrast(1.1);
+        }
+
+        #bgCanvas, #mainCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        #bgCanvas { z-index: 1; pointer-events: none; }
+        #mainCanvas { z-index: 5; pointer-events: none; }
+
+        #hud {
+            position: absolute;
+            top: env(safe-area-inset-top, 20px);
+            left: 15px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 8px 12px;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.9);
+            min-width: 120px;
+        }
+        .stat:last-child { margin-bottom: 0; }
+        .stat span.val { font-weight: bold; color: var(--accent); }
+
+        #themes {
+            position: absolute;
+            bottom: max(20px, env(safe-area-inset-bottom));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 6px;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 30px;
+            padding: 6px;
+            max-width: 95vw;
+            overflow-x: auto;
+        }
+
+        .theme-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+        
+        .theme-btn.active {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+        }
+
+        #startOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .start-btn {
+            padding: 16px 36px;
+            font-size: 1.1rem;
+            background: linear-gradient(45deg, #ff00cc, #3333ff);
+            border: none;
+            color: white;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .start-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        #errorMessage {
+            display: none;
+            max-width: 520px;
+            margin: 18px 0 0;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 100, 100, 0.55);
+            border-radius: 10px;
+            background: rgba(100, 0, 20, 0.35);
+            color: #ffd6d6;
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+
+        #toast {
+            position: absolute;
+            left: 50%;
+            top: 18%;
+            z-index: 120;
+            padding: 10px 18px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 999px;
+            background: rgba(20, 25, 40, 0.7);
+            color: #fff;
+            font-size: 0.85rem;
+            letter-spacing: 0.08em;
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -8px);
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="startOverlay">
+        <h1 style="margin-bottom: 15px; font-weight: 300;">NEON AURA AR</h1>
+        <p id="startStatus" style="margin-bottom: 18px; opacity: 0.8;">Kamera va qo‘l modelini ishga tushirish uchun bosing.</p>
+        <button class="start-btn" id="startBtn">Boshlash</button>
+        <p id="errorMessage" role="alert"></p>
+    </div>
+
+    <div class="video-container">
+        <video class="input_video" playsinline webkit-playsinline muted></video>
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="mainCanvas"></canvas>
+    </div>
+
+    <div id="hud" class="hidden">
+        <div class="panel">
+            <div class="stat">Qo'llar: <span class="val" id="ui-hands">0</span></div>
+            <div class="stat">FPS: <span class="val" id="ui-fps">0</span></div>
+        </div>
+        <div class="panel">
+            <div class="stat">Ishoat: <span class="val" id="ui-gesture">Yo'q</span></div>
+            <div class="stat">Kenglik: <span class="val" id="ui-spread">0%</span></div>
+        </div>
+    </div>
+
+    <div id="themes" class="hidden">
+        <button class="theme-btn active" data-theme="Rainbow">Rainbow</button>
+        <button class="theme-btn" data-theme="Cyberpunk">Cyberpunk</button>
+        <button class="theme-btn" data-theme="Lava">Lava</button>
+        <button class="theme-btn" data-theme="Ocean">Ocean</button>
+        <button class="theme-btn" data-theme="Galaxy">Galaxy</button>
+    </div>
+    <div id="toast" aria-live="polite"></div>
+
+<script>
+const videoElement = document.querySelector('.input_video');
+const bgCanvas = document.getElementById('bgCanvas');
+const mainCanvas = document.getElementById('mainCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+const ctx = mainCanvas.getContext('2d');
+
+let width = window.innerWidth;
+let height = window.innerHeight;
+
+let time = 0;
+let lastTime = performance.now();
+let framesThisSecond = 0;
+let lastFpsTime = performance.now();
+
+let currentHands = [];
+let handVelocities = 0;
+
+let currentTheme = 'Rainbow';
+const themes = {
+    'Rainbow':   (t, index, total) => `hsl(${(t * 100 + index * (360/total)) % 360}, 100%, 60%)`,
+    'Cyberpunk': (t, index, total) => (index % 2 === 0) ? '#ff003c' : '#00f0ff',
+    'Lava':      (t, index, total) => `hsl(${(10 + (index * 10)) % 40}, 100%, ${50 + Math.sin(t)*10}%)`,
+    'Ocean':     (t, index, total) => `hsl(${180 + (index * 20)}, 100%, 60%)`,
+    'Galaxy':    (t, index, total) => `hsl(${260 + Math.sin(t*2 + index)*40}, 100%, 65%)`
+};
+
+let particles = [];
+let ripples = [];
+const FINGER_TIPS = [4, 8, 12, 16, 20];
+
+let matrixColumns = [];
+const fontSize = 14;
+
+let audioCtx = null;
+let humOsc = null;
+let humGain = null;
+let handTracker = null;
+let mediaStream = null;
+let trackingActive = false;
+let frameInProgress = false;
+let lastInferenceAt = 0;
+let screenshotFlash = 0;
+let toastTimer = null;
+let heartParticles = [];
+const MAX_PARTICLES = 320;
+const MAX_HEARTS = 30;
+const INFERENCE_INTERVAL = 1000 / 30;
+let lastFireworkState = [false, false];
+let lastHeartState = false;
+let lastPeaceState = false;
+let screenshotCooldownUntil = 0;
+let fireworkCooldownUntil = [0, 0];
+
+const uiHands = document.getElementById('ui-hands');
+const uiFps = document.getElementById('ui-fps');
+const uiGesture = document.getElementById('ui-gesture');
+const uiSpread = document.getElementById('ui-spread');
+const startOverlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const startStatus = document.getElementById('startStatus');
+const errorMessage = document.getElementById('errorMessage');
+const toast = document.getElementById('toast');
+
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    
+    bgCanvas.width = width;
+    bgCanvas.height = height;
+    mainCanvas.width = width;
+    mainCanvas.height = height;
+    
+    matrixColumns = new Array(Math.floor(width / fontSize)).fill(1).map(() => Math.random() * height/fontSize);
+}
+window.addEventListener('resize', resize);
+resize();
+
+document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentTheme = e.target.getAttribute('data-theme');
+        document.documentElement.style.setProperty('--accent', themes[currentTheme](0, 1, 1));
+    });
+});
+
+startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    errorMessage.style.display = 'none';
+    startStatus.innerText = 'Kamera so‘ralmoqda...';
+
+    try {
+        initAudio();
+        await initMediaPipe();
+        await initCamera();
+
+        startOverlay.classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        document.getElementById('themes').classList.remove('hidden');
+        requestAnimationFrame(renderLoop);
+    } catch (error) {
+        stopCamera();
+        startBtn.disabled = false;
+        startStatus.innerText = 'Ishga tushirish amalga oshmadi.';
+        errorMessage.innerText = getCameraErrorMessage(error);
+        errorMessage.style.display = 'block';
+        console.error('Hand tracking initialization failed:', error);
+    }
+});
+
+function getCameraErrorMessage(error) {
+    const name = error && error.name ? error.name : '';
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+        return 'Kamera faqat HTTPS yoki localhost orqali ishlaydi. Faylni file:// bilan emas, HTTPS server orqali oching.';
+    }
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        return 'Brauzer kameraga ruxsat bermadi. Manzil satridagi kamera belgisi orqali ruxsatni yoqing va qayta urinib ko‘ring.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        return 'Kamera topilmadi. Kamera ulanganini va boshqa dastur tomonidan band qilinmaganini tekshiring.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+        return 'Kamerani o‘qib bo‘lmadi. Zoom, Telegram yoki boshqa kamera ishlatayotgan dasturlarni yoping.';
+    }
+    if (name === 'OverconstrainedError') {
+        return 'Kamera sozlamalari mos kelmadi. Boshqa kamera yoki qurilmada qayta urinib ko‘ring.';
+    }
+    return `Kamera yoki qo‘l modeli ishga tushmadi${error && error.message ? `: ${error.message}` : '.'}`;
+}
+
+function initAudio() {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        humOsc = audioCtx.createOscillator();
+        humGain = audioCtx.createGain();
+        humOsc.type = 'sine';
+        humOsc.frequency.value = 100;
+        humGain.gain.value = 0;
+        
+        humOsc.connect(humGain);
+        humGain.connect(audioCtx.destination);
+        humOsc.start();
+    } catch(e){}
+}
+
+function showToast(message) {
+    toast.innerText = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1400);
+}
+
+function triggerZap() {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.12);
+    } catch(e){}
+}
+
+function triggerFireworkSound() {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    try {
+        const now = audioCtx.currentTime;
+        const tones = [
+            { frequency: 180, end: 720, delay: 0 },
+            { frequency: 260, end: 1040, delay: 0.045 }
+        ];
+        tones.forEach(({ frequency, end, delay }) => {
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(frequency, now + delay);
+            osc.frequency.exponentialRampToValueAtTime(end, now + delay + 0.16);
+            gainNode.gain.setValueAtTime(0.0001, now + delay);
+            gainNode.gain.exponentialRampToValueAtTime(0.18, now + delay + 0.02);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.28);
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            osc.start(now + delay);
+            osc.stop(now + delay + 0.3);
+        });
+    } catch(e){}
+}
+
+function updateHum(activeHands) {
+    if (!audioCtx || !humGain || audioCtx.state !== 'running') return;
+    if (activeHands.length < 2) {
+        humGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+        return;
+    }
+
+    const p1 = activeHands[0][8];
+    const p2 = activeHands[1][8];
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    
+    humOsc.frequency.setTargetAtTime(100 + (1 - Math.min(dist, 1)) * 300, audioCtx.currentTime, 0.1);
+    humGain.gain.setTargetAtTime(0.02 + (1 - Math.min(dist, 1)) * 0.08, audioCtx.currentTime, 0.1);
+}
+
+function getDist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+function mapToCanvas(point) { return { x: point.x * width, y: point.y * height }; }
+
+let lastPinchState = [false, false];
+
+function isFingerExtended(hand, tipIndex, pipIndex) {
+    const wrist = hand[0];
+    return getDist(hand[tipIndex], wrist) > getDist(hand[pipIndex], wrist) * 1.12;
+}
+
+function isPeaceSign(hand) {
+    return isFingerExtended(hand, 8, 6) &&
+        isFingerExtended(hand, 12, 10) &&
+        !isFingerExtended(hand, 16, 14) &&
+        !isFingerExtended(hand, 20, 18);
+}
+
+function createFirework(pos, color) {
+    const burstCount = 48;
+    for (let i = 0; i < burstCount; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 90 + Math.random() * 240;
+        if (particles.length >= MAX_PARTICLES) particles.shift();
+        particles.push({
+            x: pos.x,
+            y: pos.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            gravity: 105,
+            life: 0.75 + Math.random() * 0.45,
+            color: i % 3 === 0 ? '#ffffff' : color,
+            size: Math.random() * 2.5 + 1.5
+        });
+    }
+    createShockwave(pos, color);
+    triggerFireworkSound();
+}
+
+function drawHeartShape(context, x, y, size, color, rotation, alpha) {
+    context.save();
+    context.translate(x, y);
+    context.rotate(rotation);
+    context.scale(size, size);
+    context.globalAlpha = alpha;
+    context.beginPath();
+    context.moveTo(0, 0.35);
+    context.bezierCurveTo(-0.9, -0.2, -0.55, -0.85, 0, -0.42);
+    context.bezierCurveTo(0.55, -0.85, 0.9, -0.2, 0, 0.35);
+    context.closePath();
+    context.fillStyle = color;
+    context.fill();
+    context.restore();
+}
+
+function createHeartBurst(pos) {
+    const heartColors = ['#ff3d81', '#ff6fb1', '#ffb3d1', '#ffffff'];
+    for (let i = 0; i < 18; i++) {
+        if (heartParticles.length >= MAX_HEARTS) heartParticles.shift();
+        heartParticles.push({
+            x: pos.x + (Math.random() - 0.5) * 28,
+            y: pos.y + (Math.random() - 0.5) * 20,
+            vx: (Math.random() - 0.5) * 70,
+            vy: -45 - Math.random() * 105,
+            life: 1.1 + Math.random() * 0.8,
+            size: 4 + Math.random() * 8,
+            rotation: (Math.random() - 0.5) * 0.5,
+            spin: (Math.random() - 0.5) * 1.8,
+            color: heartColors[i % heartColors.length]
+        });
+    }
+    createShockwave(pos, '#ff4f9a');
+}
+
+function captureScreenshot() {
+    const screenshotCanvas = document.createElement('canvas');
+    screenshotCanvas.width = width;
+    screenshotCanvas.height = height;
+    const screenshotCtx = screenshotCanvas.getContext('2d');
+
+    screenshotCtx.save();
+    screenshotCtx.translate(width, 0);
+    screenshotCtx.scale(-1, 1);
+    screenshotCtx.drawImage(videoElement, 0, 0, width, height);
+    screenshotCtx.drawImage(bgCanvas, 0, 0, width, height);
+    screenshotCtx.drawImage(mainCanvas, 0, 0, width, height);
+    screenshotCtx.restore();
+
+    screenshotCanvas.toBlob((blob) => {
+        if (!blob) return;
+        const link = document.createElement('a');
+        link.download = `neon-aura-${Date.now()}.png`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        showToast('SKRINSHOT SAQLANDI');
+    }, 'image/png');
+
+    screenshotFlash = 1;
+}
+
+function detectGestures() {
+    if (!currentHands.length) {
+        lastPinchState = [false, false];
+        lastFireworkState = [false, false];
+        lastHeartState = false;
+        lastPeaceState = false;
+        return;
+    }
+
+    const now = performance.now();
+    let specialGestureDetected = false;
+    
+    currentHands.forEach((hand, idx) => {
+        const thumb = hand[4];
+        const index = hand[8];
+        const middle = hand[12];
+        const dist = getDist(thumb, index);
+        const isPinching = dist < 0.08;
+        const isFirework = getDist(thumb, middle) < 0.075;
+        
+        if (isPinching && !lastPinchState[idx]) {
+            createShockwave(mapToCanvas({x: (thumb.x + index.x)/2, y: (thumb.y + index.y)/2}), themes[currentTheme](time, 1, 1));
+            triggerZap();
+            uiGesture.innerText = "CIMTIASH!";
+            specialGestureDetected = true;
+        }
+
+        if (isFirework && !lastFireworkState[idx] && now > fireworkCooldownUntil[idx]) {
+            const fireworkPosition = mapToCanvas({
+                x: (thumb.x + middle.x) / 2,
+                y: (thumb.y + middle.y) / 2
+            });
+            createFirework(fireworkPosition, themes[currentTheme](time, idx, 2));
+            fireworkCooldownUntil[idx] = now + 750;
+            uiGesture.innerText = "MUSHAKBOZLIK!";
+            specialGestureDetected = true;
+        }
+
+        lastPinchState[idx] = isPinching;
+        lastFireworkState[idx] = isFirework;
+    });
+
+    if (currentHands.length >= 2) {
+        const firstHand = currentHands[0];
+        const secondHand = currentHands[1];
+        const heartDetected =
+            getDist(firstHand[4], secondHand[4]) < 0.14 &&
+            getDist(firstHand[8], secondHand[8]) < 0.14 &&
+            getDist(firstHand[9], secondHand[9]) < 0.34;
+
+        if (heartDetected && !lastHeartState) {
+            const heartPosition = mapToCanvas({
+                x: (firstHand[8].x + secondHand[8].x + firstHand[4].x + secondHand[4].x) / 4,
+                y: (firstHand[8].y + secondHand[8].y + firstHand[4].y + secondHand[4].y) / 4
+            });
+            createHeartBurst(heartPosition);
+            triggerZap();
+            uiGesture.innerText = "YURAK!";
+            specialGestureDetected = true;
+        }
+        lastHeartState = heartDetected;
+    } else {
+        lastHeartState = false;
+    }
+
+    const peaceDetected = currentHands.some(isPeaceSign);
+    if (peaceDetected && !lastPeaceState && now > screenshotCooldownUntil) {
+        captureScreenshot();
+        screenshotCooldownUntil = now + 1800;
+        uiGesture.innerText = "SKRINSHOT!";
+        specialGestureDetected = true;
+    }
+    lastPeaceState = peaceDetected;
+
+    if (currentHands[0]) {
+        const spread = getDist(currentHands[0][8], currentHands[0][20]);
+        let spreadPct = Math.min(Math.round(spread * 300), 100);
+        uiSpread.innerText = spreadPct + '%';
+        if (!specialGestureDetected && !lastPinchState.includes(true) && !lastFireworkState.includes(true)) {
+            uiGesture.innerText = spreadPct > 50 ? "Ochiq Qo'l" : "Musht";
+        }
+    }
+}
+
+function createParticles(pos, color) {
+    if (particles.length >= MAX_PARTICLES) particles.shift();
+    particles.push({
+        x: pos.x, y: pos.y,
+        vx: (Math.random() - 0.5) * 75, vy: (Math.random() - 0.5) * 75,
+        gravity: 0,
+        life: 0.7, color: color, size: Math.random() * 2 + 1
+    });
+}
+
+function createShockwave(pos, color) {
+    ripples.push({
+        x: pos.x, y: pos.y, radius: 0,
+        maxRadius: 100 + Math.random() * 50, life: 1.0, color: color
+    });
+}
+
+function drawBackground() {
+    bgCtx.globalCompositeOperation = 'destination-out';
+    bgCtx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    bgCtx.fillRect(0, 0, width, height);
+    bgCtx.globalCompositeOperation = 'source-over';
+
+    bgCtx.fillStyle = themes[currentTheme](time, 1, 1);
+    bgCtx.font = fontSize + "px monospace";
+
+    for (let i = 0; i < matrixColumns.length; i++) {
+        if (Math.random() > 0.96) {
+            bgCtx.fillText(String.fromCharCode(0x30A0 + Math.random() * 96), i * fontSize, matrixColumns[i] * fontSize);
+        }
+        matrixColumns[i] += 1;
+        if (matrixColumns[i] * fontSize > height && Math.random() > 0.9) matrixColumns[i] = 0;
+    }
+}
+
+function updatePhysics(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.vy += p.gravity * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt * 1.45;
+        if (p.life <= 0) particles.splice(i, 1);
+        else {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.fill();
+        }
+    }
+
+    for (let i = heartParticles.length - 1; i >= 0; i--) {
+        const heart = heartParticles[i];
+        heart.vy -= 8 * dt;
+        heart.x += heart.vx * dt;
+        heart.y += heart.vy * dt;
+        heart.rotation += heart.spin * dt;
+        heart.life -= dt;
+        if (heart.life <= 0) {
+            heartParticles.splice(i, 1);
+        } else {
+            drawHeartShape(ctx, heart.x, heart.y, heart.size, heart.color, heart.rotation, Math.min(1, heart.life));
+        }
+    }
+    
+    for (let i = ripples.length - 1; i >= 0; i--) {
+        let r = ripples[i];
+        r.radius += (r.maxRadius - r.radius) * Math.min(1, dt * 9);
+        r.life -= dt * 1.8;
+        if (r.life <= 0) ripples.splice(i, 1);
+        else {
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+            ctx.strokeStyle = r.color;
+            ctx.lineWidth = 3 * r.life;
+            ctx.globalAlpha = r.life;
+            ctx.stroke();
+        }
+    }
+    ctx.globalAlpha = 1.0;
+}
+
+function renderLoop(timestamp) {
+    requestAnimationFrame(renderLoop);
+    
+    let dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+    lastTime = timestamp;
+    time += dt;
+
+    framesThisSecond++;
+    if (timestamp > lastFpsTime + 1000) {
+        uiFps.innerText = framesThisSecond;
+        framesThisSecond = 0;
+        lastFpsTime = timestamp;
+    }
+
+    drawBackground();
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = 'screen';
+
+    updatePhysics(dt);
+
+    if (currentHands.length > 0) {
+        currentHands.forEach((hand, handIndex) => {
+            const glowColor = themes[currentTheme](time, handIndex, 2);
+            
+            drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: glowColor, lineWidth: 2 });
+            
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = glowColor;
+            
+            FINGER_TIPS.forEach((tipIndex, idx) => {
+                const pt = mapToCanvas(hand[tipIndex]);
+                const tipCol = themes[currentTheme](time, idx, FINGER_TIPS.length);
+                
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+
+                if (Math.random() > 0.7) createParticles(pt, tipCol);
+            });
+            ctx.shadowBlur = 0;
+        });
+
+        if (currentHands.length >= 2) {
+            const h1 = currentHands[0];
+            const h2 = currentHands[1];
+
+            FINGER_TIPS.forEach((tipIndex, idx) => {
+                const pt1 = mapToCanvas(h1[tipIndex]);
+                const pt2 = mapToCanvas(h2[tipIndex]);
+                const col = themes[currentTheme](time, idx, FINGER_TIPS.length);
+                
+                ctx.beginPath();
+                ctx.moveTo(pt1.x, pt1.y);
+                ctx.lineTo(pt2.x, pt2.y);
+                ctx.strokeStyle = col;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+        detectGestures();
+    }
+    if (screenshotFlash > 0) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = `rgba(255, 255, 255, ${screenshotFlash * 0.65})`;
+        ctx.fillRect(0, 0, width, height);
+        screenshotFlash = Math.max(0, screenshotFlash - dt * 5);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+async function initMediaPipe() {
+    if (typeof Hands !== 'function') {
+        throw new Error('MediaPipe Hands yuklanmadi. Internet ulanishi va CDN bloklanmaganini tekshiring.');
+    }
+
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    // Aniqlik darajasini oshirdik
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults((results) => {
+        uiHands.innerText = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+        currentHands = results.multiHandLandmarks || [];
+        updateHum(currentHands);
+    });
+
+    handTracker = hands;
+}
+
+async function initCamera() {
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+        throw new Error('Secure camera context required');
+    }
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        throw new Error('Bu brauzer getUserMedia funksiyasini qo‘llab-quvvatlamaydi.');
+    }
+    if (!handTracker) {
+        throw new Error('Qo‘l modeli tayyor emas.');
+    }
+
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+        }
+    });
+
+    videoElement.srcObject = mediaStream;
+    videoElement.setAttribute('playsinline', '');
+    await videoElement.play();
+    trackingActive = true;
+    lastInferenceAt = 0;
+    requestAnimationFrame(processCameraFrame);
+}
+
+async function processCameraFrame() {
+    if (!trackingActive) return;
+
+    const now = performance.now();
+    if (!frameInProgress &&
+        now - lastInferenceAt >= INFERENCE_INTERVAL &&
+        videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        frameInProgress = true;
+        lastInferenceAt = now;
+        try {
+            await handTracker.send({ image: videoElement });
+        } catch (error) {
+            console.error('Hand tracking frame failed:', error);
+        } finally {
+            frameInProgress = false;
+        }
+    }
+
+    requestAnimationFrame(processCameraFrame);
+}
+
+function stopCamera() {
+    trackingActive = false;
+    frameInProgress = false;
+    if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        mediaStream = null;
+    }
+    videoElement.srcObject = null;
+}
+
+window.addEventListener('beforeunload', stopCamera);
+</script>
+</body>
+</html>
