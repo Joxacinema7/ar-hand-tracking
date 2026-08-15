@@ -204,6 +204,147 @@
         }
 
         .hidden { display: none !important; }
+
+        #musicPlayer {
+            position: fixed;
+            right: 15px;
+            bottom: max(20px, env(safe-area-inset-bottom));
+            z-index: 25;
+            width: min(350px, calc(100vw - 30px));
+            padding: 14px;
+            background: rgba(10, 12, 26, 0.82);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .player-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: #fff;
+            font-size: 0.78rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .file-picker {
+            display: block;
+            padding: 10px 12px;
+            border: 1px dashed rgba(255, 255, 255, 0.35);
+            border-radius: 10px;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.8rem;
+            text-align: center;
+            cursor: pointer;
+            transition: background 160ms ease, border-color 160ms ease;
+        }
+
+        .file-picker:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.7);
+        }
+
+        #musicFileInput {
+            display: none;
+        }
+
+        #trackName {
+            margin: 10px 0 8px;
+            overflow: hidden;
+            color: var(--accent);
+            font-size: 0.78rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #audioPlayer {
+            display: block;
+            width: 100%;
+            height: 34px;
+            margin-bottom: 8px;
+        }
+
+        .player-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        .player-btn {
+            min-height: 32px;
+            padding: 6px 4px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+
+        .player-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .volume-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 0.75rem;
+        }
+
+        #volumeRange {
+            flex: 1;
+            accent-color: var(--accent);
+        }
+
+        .gesture-guide {
+            margin-top: 9px;
+            color: rgba(255, 255, 255, 0.58);
+            font-size: 0.68rem;
+            line-height: 1.35;
+        }
+
+        #trackList {
+            max-height: 92px;
+            margin-top: 10px;
+            overflow-y: auto;
+        }
+
+        .track-item {
+            display: block;
+            width: 100%;
+            padding: 5px 7px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.72);
+            cursor: pointer;
+            font-size: 0.72rem;
+            overflow: hidden;
+            text-align: left;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .track-item:hover,
+        .track-item.active {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--accent);
+        }
+
+        @media (max-width: 640px) {
+            #musicPlayer {
+                right: 10px;
+                bottom: 76px;
+                width: calc(100vw - 20px);
+            }
+        }
     </style>
 </head>
 <body>
@@ -216,7 +357,7 @@
     </div>
 
     <div class="video-container">
-        <video class="input_video" playsinline webkit-playsinline muted></video>
+        <video class="input_video" autoplay playsinline webkit-playsinline muted></video>
         <canvas id="bgCanvas"></canvas>
         <canvas id="mainCanvas"></canvas>
     </div>
@@ -240,6 +381,41 @@
         <button class="theme-btn" data-theme="Galaxy">Galaxy</button>
     </div>
     <div id="toast" aria-live="polite"></div>
+
+    <div id="musicPlayer" class="hidden">
+        <div class="player-heading">
+            <span>Musiqa player</span>
+            <span id="trackCount">0 ta fayl</span>
+        </div>
+
+        <label class="file-picker" for="musicFileInput">
+            Fayldan musiqa tanlash
+        </label>
+        <input id="musicFileInput" type="file" accept="audio/*" multiple>
+
+        <div id="trackName">Musiqa tanlanmagan</div>
+
+        <audio id="audioPlayer" controls preload="metadata"></audio>
+
+        <div class="player-controls">
+            <button class="player-btn" id="prevTrackBtn" type="button">Oldingi</button>
+            <button class="player-btn" id="playPauseBtn" type="button">Play</button>
+            <button class="player-btn" id="nextTrackBtn" type="button">Keyingi</button>
+            <button class="player-btn" id="stopTrackBtn" type="button">Stop</button>
+        </div>
+
+        <div class="volume-row">
+            <button class="player-btn" id="volumeDownBtn" type="button">Ovoz −</button>
+            <input id="volumeRange" type="range" min="0" max="1" step="0.05" value="1" aria-label="Ovoz balandligi">
+            <button class="player-btn" id="volumeUpBtn" type="button">Ovoz +</button>
+        </div>
+
+        <div class="gesture-guide">
+            Pinch: Play/Pause · Musht: Stop · Chap/O‘ng siljitish: oldingi/keyingi · Bosh barmoq yuqoriga/pastga: ovoz
+        </div>
+
+        <div id="trackList"></div>
+    </div>
 
 <script>
 const videoElement = document.querySelector('.input_video');
@@ -293,6 +469,13 @@ const INFERENCE_INTERVAL = 1000 / 30;
 let lastFireworkState = [false, false];
 let lastHeartState = false;
 let lastPeaceState = false;
+let lastFaceCoveredState = false;
+let lastThumbsUpState = false;
+let lastThumbsDownState = false;
+let lastFistState = false;
+let lastPalmX = null;
+let lastPalmAt = 0;
+let lastPlayerGestureAt = 0;
 let screenshotCooldownUntil = 0;
 let fireworkCooldownUntil = [0, 0];
 
@@ -305,6 +488,20 @@ const startBtn = document.getElementById('startBtn');
 const startStatus = document.getElementById('startStatus');
 const errorMessage = document.getElementById('errorMessage');
 const toast = document.getElementById('toast');
+
+const musicPlayer = document.getElementById('musicPlayer');
+const musicFileInput = document.getElementById('musicFileInput');
+const audioPlayer = document.getElementById('audioPlayer');
+const trackName = document.getElementById('trackName');
+const trackCount = document.getElementById('trackCount');
+const trackList = document.getElementById('trackList');
+const prevTrackBtn = document.getElementById('prevTrackBtn');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const nextTrackBtn = document.getElementById('nextTrackBtn');
+const stopTrackBtn = document.getElementById('stopTrackBtn');
+const volumeDownBtn = document.getElementById('volumeDownBtn');
+const volumeUpBtn = document.getElementById('volumeUpBtn');
+const volumeRange = document.getElementById('volumeRange');
 
 function resize() {
     width = window.innerWidth;
@@ -350,6 +547,144 @@ startBtn.addEventListener('click', async () => {
         errorMessage.innerText = getCameraErrorMessage(error);
         errorMessage.style.display = 'block';
         console.error('Hand tracking initialization failed:', error);
+    }
+});
+
+
+let musicTracks = [];
+let currentTrackIndex = -1;
+let currentTrackUrl = null;
+
+function renderTrackList() {
+    trackList.innerHTML = '';
+    trackCount.innerText = `${musicTracks.length} ta fayl`;
+
+    musicTracks.forEach((file, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'track-item' + (index === currentTrackIndex ? ' active' : '');
+        button.innerText = `${index + 1}. ${file.name}`;
+        button.title = file.name;
+        button.addEventListener('click', () => loadTrack(index, true));
+        trackList.appendChild(button);
+    });
+}
+
+function loadTrack(index, shouldPlay = false) {
+    if (!musicTracks.length) return;
+
+    currentTrackIndex = (index + musicTracks.length) % musicTracks.length;
+
+    if (currentTrackUrl) {
+        URL.revokeObjectURL(currentTrackUrl);
+    }
+
+    currentTrackUrl = URL.createObjectURL(musicTracks[currentTrackIndex]);
+    audioPlayer.src = currentTrackUrl;
+    audioPlayer.load();
+    trackName.innerText = musicTracks[currentTrackIndex].name;
+    renderTrackList();
+
+    if (shouldPlay) {
+        audioPlayer.play().catch((error) => {
+            console.warn('Audio playback requires user interaction:', error);
+        });
+    }
+}
+
+function selectMusicFiles(files) {
+    const selectedFiles = Array.from(files).filter((file) =>
+        file.type.startsWith('audio/')
+    );
+
+    if (!selectedFiles.length) {
+        trackName.innerText = 'Audio fayl tanlanmadi';
+        return;
+    }
+
+    musicTracks = selectedFiles;
+    currentTrackIndex = -1;
+    musicPlayer.classList.remove('hidden');
+    loadTrack(0, false);
+}
+
+musicFileInput.addEventListener('change', (event) => {
+    selectMusicFiles(event.target.files);
+});
+
+function togglePlayback() {
+    if (!audioPlayer.src) return;
+
+    if (audioPlayer.paused) {
+        audioPlayer.play().catch((error) => {
+            console.warn('Audio playback failed:', error);
+        });
+    } else {
+        audioPlayer.pause();
+    }
+}
+
+playPauseBtn.addEventListener('click', togglePlayback);
+
+audioPlayer.addEventListener('play', () => {
+    playPauseBtn.innerText = 'Pause';
+});
+
+audioPlayer.addEventListener('pause', () => {
+    playPauseBtn.innerText = 'Play';
+});
+
+audioPlayer.addEventListener('ended', () => {
+    if (musicTracks.length > 1) {
+        loadTrack(currentTrackIndex + 1, true);
+    } else {
+        playPauseBtn.innerText = 'Play';
+    }
+});
+
+function previousTrack() {
+    if (!musicTracks.length) return;
+    loadTrack(currentTrackIndex - 1, true);
+}
+
+function nextTrack() {
+    if (!musicTracks.length) return;
+    loadTrack(currentTrackIndex + 1, true);
+}
+
+function stopTrack() {
+    audioPlayer.pause();
+    audioPlayer.currentTime = 0;
+}
+
+prevTrackBtn.addEventListener('click', previousTrack);
+nextTrackBtn.addEventListener('click', nextTrack);
+stopTrackBtn.addEventListener('click', stopTrack);
+
+function updateVolume(value) {
+    const volume = Math.max(0, Math.min(1, Number(value)));
+    audioPlayer.volume = volume;
+    volumeRange.value = String(volume);
+}
+
+volumeRange.addEventListener('input', (event) => {
+    updateVolume(event.target.value);
+});
+
+function decreaseVolume() {
+    updateVolume(audioPlayer.volume - 0.1);
+}
+
+function increaseVolume() {
+    updateVolume(audioPlayer.volume + 0.1);
+}
+
+volumeDownBtn.addEventListener('click', decreaseVolume);
+volumeUpBtn.addEventListener('click', increaseVolume);
+
+window.addEventListener('beforeunload', () => {
+    if (currentTrackUrl) {
+        URL.revokeObjectURL(currentTrackUrl);
     }
 });
 
@@ -472,6 +807,156 @@ function isPeaceSign(hand) {
         !isFingerExtended(hand, 20, 18);
 }
 
+
+function isFaceCovered(hand) {
+    if (!hand || hand.length < 21) return false;
+
+    const handMinX = Math.min(...hand.map((point) => point.x));
+    const handMaxX = Math.max(...hand.map((point) => point.x));
+    const handMinY = Math.min(...hand.map((point) => point.y));
+    const handMaxY = Math.max(...hand.map((point) => point.y));
+
+    const handCenterX = (handMinX + handMaxX) / 2;
+    const handCenterY = (handMinY + handMaxY) / 2;
+    const handWidth = handMaxX - handMinX;
+    const handHeight = handMaxY - handMinY;
+
+    // The front camera normally places the face near the center of the frame.
+    // A large hand overlapping that area is treated as a covered face.
+    const nearFaceCenter =
+        handCenterX > 0.22 &&
+        handCenterX < 0.78 &&
+        handCenterY > 0.12 &&
+        handCenterY < 0.78;
+
+    const largeEnoughToCoverFace =
+        handWidth > 0.16 || handHeight > 0.24;
+
+    const palmNearFace =
+        hand[9].x > 0.22 &&
+        hand[9].x < 0.78 &&
+        hand[9].y > 0.12 &&
+        hand[9].y < 0.72;
+
+    return nearFaceCenter && largeEnoughToCoverFace && palmNearFace;
+}
+
+function isFist(hand) {
+    const foldedFingers = [
+        [8, 6],
+        [12, 10],
+        [16, 14],
+        [20, 18]
+    ].every(([tip, pip]) => !isFingerExtended(hand, tip, pip));
+
+    const foldedThumb = !isFingerExtended(hand, 4, 3);
+    return foldedFingers && foldedThumb;
+}
+
+function isThumbsUp(hand) {
+    const fingersFolded = [
+        [8, 6],
+        [12, 10],
+        [16, 14],
+        [20, 18]
+    ].every(([tip, pip]) => !isFingerExtended(hand, tip, pip));
+
+    const thumbExtended = isFingerExtended(hand, 4, 3);
+    return fingersFolded && thumbExtended && hand[4].y < hand[3].y - 0.04;
+}
+
+function isThumbsDown(hand) {
+    const fingersFolded = [
+        [8, 6],
+        [12, 10],
+        [16, 14],
+        [20, 18]
+    ].every(([tip, pip]) => !isFingerExtended(hand, tip, pip));
+
+    const thumbExtended = isFingerExtended(hand, 4, 3);
+    return fingersFolded && thumbExtended && hand[4].y > hand[3].y + 0.04;
+}
+
+function detectPlayerGestures(hand, faceCovered, now) {
+    if (!musicTracks.length || faceCovered) {
+        lastThumbsUpState = false;
+        lastThumbsDownState = false;
+        lastFistState = false;
+        lastPalmX = null;
+        lastPalmAt = 0;
+        return;
+    }
+
+    const thumbsUp = isThumbsUp(hand);
+    const thumbsDown = isThumbsDown(hand);
+    const fist = isFist(hand);
+
+    if (
+        thumbsUp &&
+        !lastThumbsUpState &&
+        now - lastPlayerGestureAt > 700
+    ) {
+        increaseVolume();
+        lastPlayerGestureAt = now;
+        uiGesture.innerText = 'OVOZ +';
+        showToast('OVOZ KO‘TARILDI');
+    }
+
+    if (
+        thumbsDown &&
+        !lastThumbsDownState &&
+        now - lastPlayerGestureAt > 700
+    ) {
+        decreaseVolume();
+        lastPlayerGestureAt = now;
+        uiGesture.innerText = 'OVOZ −';
+        showToast('OVOZ PASAYTIRILDI');
+    }
+
+    if (
+        fist &&
+        !lastFistState &&
+        now - lastPlayerGestureAt > 700
+    ) {
+        stopTrack();
+        lastPlayerGestureAt = now;
+        uiGesture.innerText = 'STOP';
+        showToast('MUSIQA TO‘XTATILDI');
+    }
+
+    const palmX = hand[9].x;
+    if (
+        lastPalmX !== null &&
+        now - lastPalmAt < 500 &&
+        now - lastPlayerGestureAt > 900
+    ) {
+        const swipeDistance = palmX - lastPalmX;
+
+        if (Math.abs(swipeDistance) > 0.12) {
+            if (swipeDistance > 0) {
+                nextTrack();
+                uiGesture.innerText = 'KEYINGI MUSIQA';
+                showToast('KEYINGI MUSIQA');
+            } else {
+                previousTrack();
+                uiGesture.innerText = 'OLDINGI MUSIQA';
+                showToast('OLDINGI MUSIQA');
+            }
+
+            lastPlayerGestureAt = now;
+            lastPalmX = null;
+            lastPalmAt = 0;
+        }
+    } else {
+        lastPalmX = palmX;
+        lastPalmAt = now;
+    }
+
+    lastThumbsUpState = thumbsUp;
+    lastThumbsDownState = thumbsDown;
+    lastFistState = fist;
+}
+
 function createFirework(pos, color) {
     const burstCount = 48;
     for (let i = 0; i < burstCount; i++) {
@@ -561,6 +1046,12 @@ function detectGestures() {
         lastFireworkState = [false, false];
         lastHeartState = false;
         lastPeaceState = false;
+        lastFaceCoveredState = false;
+        lastThumbsUpState = false;
+        lastThumbsDownState = false;
+        lastFistState = false;
+        lastPalmX = null;
+        lastPalmAt = 0;
         return;
     }
 
@@ -580,6 +1071,13 @@ function detectGestures() {
             triggerZap();
             uiGesture.innerText = "CIMTIASH!";
             specialGestureDetected = true;
+
+            if (idx === 0 && !isFaceCovered(hand) && musicTracks.length) {
+                togglePlayback();
+                uiGesture.innerText = audioPlayer.paused ? 'PLAY' : 'PAUSE';
+                showToast(audioPlayer.paused ? 'MUSIQA PAUSE' : 'MUSIQA PLAY');
+                lastPlayerGestureAt = performance.now();
+            }
         }
 
         if (isFirework && !lastFireworkState[idx] && now > fireworkCooldownUntil[idx]) {
@@ -620,14 +1118,20 @@ function detectGestures() {
         lastHeartState = false;
     }
 
-    const peaceDetected = currentHands.some(isPeaceSign);
-    if (peaceDetected && !lastPeaceState && now > screenshotCooldownUntil) {
+    const faceCovered = currentHands.some(isFaceCovered);
+    if (
+        faceCovered &&
+        !lastFaceCoveredState &&
+        now > screenshotCooldownUntil
+    ) {
         captureScreenshot();
         screenshotCooldownUntil = now + 1800;
-        uiGesture.innerText = "SKRINSHOT!";
+        uiGesture.innerText = 'YUZ BERKILDI';
         specialGestureDetected = true;
     }
-    lastPeaceState = peaceDetected;
+    lastFaceCoveredState = faceCovered;
+
+    detectPlayerGestures(currentHands[0], faceCovered, now);
 
     if (currentHands[0]) {
         const spread = getDist(currentHands[0][8], currentHands[0][20]);
@@ -853,6 +1357,11 @@ async function initMediaPipe() {
 }
 
 async function initCamera() {
+    // Mobile Safari and in-app browsers require these properties explicitly.
+    videoElement.autoplay = true;
+    videoElement.muted = true;
+    videoElement.playsInline = true;
+
     if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
         throw new Error('Secure camera context required');
     }
@@ -873,7 +1382,11 @@ async function initCamera() {
     });
 
     videoElement.srcObject = mediaStream;
+    videoElement.setAttribute('autoplay', '');
     videoElement.setAttribute('playsinline', '');
+    videoElement.setAttribute('webkit-playsinline', '');
+    videoElement.muted = true;
+
     if (videoElement.readyState < 1) {
         await new Promise((resolve) => {
             videoElement.addEventListener('loadedmetadata', resolve, { once: true });
