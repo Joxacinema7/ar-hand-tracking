@@ -283,6 +283,7 @@ let mediaStream = null;
 let trackingActive = false;
 let frameInProgress = false;
 let lastInferenceAt = 0;
+let lastResultAt = 0;
 let screenshotFlash = 0;
 let toastTimer = null;
 let heartParticles = [];
@@ -721,6 +722,30 @@ function updatePhysics(dt) {
     ctx.globalAlpha = 1.0;
 }
 
+function drawNeonHand(hand, color) {
+    const pulse = 0.7 + Math.sin(time * 5.5) * 0.18;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Wide blurred layer creates the colored neon glow.
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 22 * pulse;
+    drawConnectors(ctx, hand, HAND_CONNECTIONS, {
+        color,
+        lineWidth: 5.5
+    });
+
+    // Thin bright core keeps the hand skeleton crisp.
+    ctx.shadowBlur = 0;
+    drawConnectors(ctx, hand, HAND_CONNECTIONS, {
+        color: 'rgba(255, 255, 255, 0.9)',
+        lineWidth: 1.35
+    });
+    ctx.restore();
+}
+
 function renderLoop(timestamp) {
     requestAnimationFrame(renderLoop);
     
@@ -748,9 +773,11 @@ function renderLoop(timestamp) {
         currentHands.forEach((hand, handIndex) => {
             const glowColor = themes[currentTheme](time, handIndex, 2);
             
-            drawConnectors(ctx, hand, HAND_CONNECTIONS, { color: glowColor, lineWidth: 2 });
+            drawNeonHand(hand, glowColor);
             
-            ctx.shadowBlur = 10;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.shadowBlur = 16;
             ctx.shadowColor = glowColor;
             
             FINGER_TIPS.forEach((tipIndex, idx) => {
@@ -764,7 +791,7 @@ function renderLoop(timestamp) {
 
                 if (Math.random() > 0.7) createParticles(pt, tipCol);
             });
-            ctx.shadowBlur = 0;
+            ctx.restore();
         });
 
         if (currentHands.length >= 2) {
@@ -780,9 +807,12 @@ function renderLoop(timestamp) {
                 ctx.moveTo(pt1.x, pt1.y);
                 ctx.lineTo(pt2.x, pt2.y);
                 ctx.strokeStyle = col;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 2.5 + Math.sin(time * 5 + idx) * 0.45;
+                ctx.shadowColor = col;
+                ctx.shadowBlur = 14;
                 ctx.stroke();
             });
+            ctx.shadowBlur = 0;
         }
         detectGestures();
     }
@@ -813,6 +843,7 @@ async function initMediaPipe() {
     });
 
     hands.onResults((results) => {
+        lastResultAt = performance.now();
         uiHands.innerText = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
         currentHands = results.multiHandLandmarks || [];
         updateHum(currentHands);
@@ -843,9 +874,16 @@ async function initCamera() {
 
     videoElement.srcObject = mediaStream;
     videoElement.setAttribute('playsinline', '');
+    if (videoElement.readyState < 1) {
+        await new Promise((resolve) => {
+            videoElement.addEventListener('loadedmetadata', resolve, { once: true });
+        });
+    }
     await videoElement.play();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     trackingActive = true;
     lastInferenceAt = 0;
+    lastResultAt = 0;
     requestAnimationFrame(processCameraFrame);
 }
 
@@ -855,7 +893,9 @@ async function processCameraFrame() {
     const now = performance.now();
     if (!frameInProgress &&
         now - lastInferenceAt >= INFERENCE_INTERVAL &&
-        videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        videoElement.readyState >= 2 &&
+        videoElement.videoWidth > 0 &&
+        videoElement.videoHeight > 0) {
         frameInProgress = true;
         lastInferenceAt = now;
         try {
