@@ -274,6 +274,11 @@
             gap: 6px;
         }
 
+        .gesture-toggle {
+            width: 100%;
+            margin-top: 8px;
+        }
+
         .player-btn {
             min-height: 32px;
             padding: 6px 4px;
@@ -287,6 +292,12 @@
 
         .player-btn:hover {
             background: rgba(255, 255, 255, 0.18);
+        }
+
+        .player-btn.is-on {
+            border-color: var(--accent);
+            background: rgba(0, 255, 204, 0.16);
+            color: var(--accent);
         }
 
         .volume-row {
@@ -403,6 +414,9 @@
             <button class="player-btn" id="nextTrackBtn" type="button">Keyingi</button>
             <button class="player-btn" id="stopTrackBtn" type="button">Stop</button>
         </div>
+        <button class="player-btn gesture-toggle" id="gestureToggleBtn" type="button" aria-pressed="false">
+            Qo‘l boshqaruvi: OFF
+        </button>
 
         <div class="volume-row">
             <button class="player-btn" id="volumeDownBtn" type="button">Ovoz −</button>
@@ -433,8 +447,6 @@ let framesThisSecond = 0;
 let lastFpsTime = performance.now();
 
 let currentHands = [];
-let handVelocities = 0;
-
 let currentTheme = 'Rainbow';
 const themes = {
     'Rainbow':   (t, index, total) => `hsl(${(t * 100 + index * (360/total)) % 360}, 100%, 60%)`,
@@ -476,6 +488,8 @@ let lastFistState = false;
 let lastPalmX = null;
 let lastPalmAt = 0;
 let lastPlayerGestureAt = 0;
+let playerGestureArmedAt = 0;
+let gestureControlEnabled = false;
 let screenshotCooldownUntil = 0;
 let fireworkCooldownUntil = [0, 0];
 
@@ -499,6 +513,7 @@ const prevTrackBtn = document.getElementById('prevTrackBtn');
 const playPauseBtn = document.getElementById('playPauseBtn');
 const nextTrackBtn = document.getElementById('nextTrackBtn');
 const stopTrackBtn = document.getElementById('stopTrackBtn');
+const gestureToggleBtn = document.getElementById('gestureToggleBtn');
 const volumeDownBtn = document.getElementById('volumeDownBtn');
 const volumeUpBtn = document.getElementById('volumeUpBtn');
 const volumeRange = document.getElementById('volumeRange');
@@ -554,6 +569,16 @@ startBtn.addEventListener('click', async () => {
 let musicTracks = [];
 let currentTrackIndex = -1;
 let currentTrackUrl = null;
+const PLAYER_GESTURE_COOLDOWN = 900;
+const PLAYER_GESTURE_ARM_DELAY = 900;
+const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [17, 18], [18, 19], [19, 20],
+    [0, 17]
+];
 
 function renderTrackList() {
     trackList.innerHTML = '';
@@ -580,6 +605,10 @@ function loadTrack(index, shouldPlay = false) {
     }
 
     currentTrackUrl = URL.createObjectURL(musicTracks[currentTrackIndex]);
+    // Loading a new local object URL must never start playback by itself.
+    audioPlayer.pause();
+    audioPlayer.autoplay = false;
+    audioPlayer.removeAttribute('autoplay');
     audioPlayer.src = currentTrackUrl;
     audioPlayer.load();
     trackName.innerText = musicTracks[currentTrackIndex].name;
@@ -593,7 +622,7 @@ function loadTrack(index, shouldPlay = false) {
 }
 
 function selectMusicFiles(files) {
-    const selectedFiles = Array.from(files).filter((file) =>
+    const selectedFiles = Array.from(files || []).filter((file) =>
         file.type.startsWith('audio/')
     );
 
@@ -604,6 +633,8 @@ function selectMusicFiles(files) {
 
     musicTracks = selectedFiles;
     currentTrackIndex = -1;
+    gestureControlEnabled = false;
+    updateGestureToggle();
     musicPlayer.classList.remove('hidden');
     loadTrack(0, false);
 }
@@ -612,8 +643,17 @@ musicFileInput.addEventListener('change', (event) => {
     selectMusicFiles(event.target.files);
 });
 
-function togglePlayback() {
-    if (!audioPlayer.src) return;
+function togglePlayback({ fromGesture = false } = {}) {
+    const now = performance.now();
+    if (!audioPlayer.src || currentTrackIndex < 0) return false;
+    if (
+        fromGesture &&
+        (!gestureControlEnabled ||
+            now < playerGestureArmedAt ||
+            now - lastPlayerGestureAt < PLAYER_GESTURE_COOLDOWN)
+    ) {
+        return false;
+    }
 
     if (audioPlayer.paused) {
         audioPlayer.play().catch((error) => {
@@ -622,9 +662,37 @@ function togglePlayback() {
     } else {
         audioPlayer.pause();
     }
+
+    if (fromGesture) lastPlayerGestureAt = now;
+    return true;
 }
 
 playPauseBtn.addEventListener('click', togglePlayback);
+
+function updateGestureToggle() {
+    gestureToggleBtn.innerText = gestureControlEnabled
+        ? 'Qo‘l boshqaruvi: ON'
+        : 'Qo‘l boshqaruvi: OFF';
+    gestureToggleBtn.classList.toggle('is-on', gestureControlEnabled);
+    gestureToggleBtn.setAttribute('aria-pressed', String(gestureControlEnabled));
+}
+
+gestureToggleBtn.addEventListener('click', () => {
+    gestureControlEnabled = !gestureControlEnabled;
+    playerGestureArmedAt = performance.now() + PLAYER_GESTURE_ARM_DELAY;
+    lastPlayerGestureAt = 0;
+    lastThumbsUpState = false;
+    lastThumbsDownState = false;
+    lastFistState = false;
+    lastPalmX = null;
+    lastPalmAt = 0;
+    updateGestureToggle();
+    showToast(
+        gestureControlEnabled
+            ? 'QO‘L BOSHQARUVI YOQILDI'
+            : 'QO‘L BOSHQARUVI O‘CHIRILDI'
+    );
+});
 
 audioPlayer.addEventListener('play', () => {
     playPauseBtn.innerText = 'Pause';
@@ -878,7 +946,7 @@ function isThumbsDown(hand) {
 }
 
 function detectPlayerGestures(hand, faceCovered, now) {
-    if (!musicTracks.length || faceCovered) {
+    if (!musicTracks.length || faceCovered || !gestureControlEnabled) {
         lastThumbsUpState = false;
         lastThumbsDownState = false;
         lastFistState = false;
@@ -1073,10 +1141,11 @@ function detectGestures() {
             specialGestureDetected = true;
 
             if (idx === 0 && !isFaceCovered(hand) && musicTracks.length) {
-                togglePlayback();
-                uiGesture.innerText = audioPlayer.paused ? 'PLAY' : 'PAUSE';
-                showToast(audioPlayer.paused ? 'MUSIQA PAUSE' : 'MUSIQA PLAY');
-                lastPlayerGestureAt = performance.now();
+                const wasPaused = audioPlayer.paused;
+                if (togglePlayback({ fromGesture: true })) {
+                    uiGesture.innerText = wasPaused ? 'PLAY' : 'PAUSE';
+                    showToast(wasPaused ? 'MUSIQA PLAY' : 'MUSIQA PAUSE');
+                }
             }
         }
 
@@ -1236,18 +1305,27 @@ function drawNeonHand(hand, color) {
     // Wide blurred layer creates the colored neon glow.
     ctx.shadowColor = color;
     ctx.shadowBlur = 22 * pulse;
-    drawConnectors(ctx, hand, HAND_CONNECTIONS, {
-        color,
-        lineWidth: 5.5
-    });
+    drawHandConnectors(ctx, hand, color, 5.5);
 
     // Thin bright core keeps the hand skeleton crisp.
     ctx.shadowBlur = 0;
-    drawConnectors(ctx, hand, HAND_CONNECTIONS, {
-        color: 'rgba(255, 255, 255, 0.9)',
-        lineWidth: 1.35
-    });
+    drawHandConnectors(ctx, hand, 'rgba(255, 255, 255, 0.9)', 1.35);
     ctx.restore();
+}
+
+function drawHandConnectors(context, hand, color, lineWidth) {
+    context.save();
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    context.beginPath();
+    HAND_CONNECTIONS.forEach(([start, end]) => {
+        const startPoint = mapToCanvas(hand[start]);
+        const endPoint = mapToCanvas(hand[end]);
+        context.moveTo(startPoint.x, startPoint.y);
+        context.lineTo(endPoint.x, endPoint.y);
+    });
+    context.stroke();
+    context.restore();
 }
 
 function renderLoop(timestamp) {
